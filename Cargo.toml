@@ -1,0 +1,6 @@
+[workspace]
+members = [
+	"beryl",
+	"beryl-cli",
+	"hamu",
+]
