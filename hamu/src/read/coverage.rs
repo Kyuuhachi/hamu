@@ -30,7 +30,7 @@ impl<'a, T: In<'a>> Coverage<'a, T> {
 	}
 }
 
-impl<'a, T: In<'a>> InBase<'a> for Coverage<'a, T> {
+impl<'a, T: In<'a>> In<'a> for Coverage<'a, T> {
 	fn pos(&self) -> usize {
 		self.inner.pos()
 	}

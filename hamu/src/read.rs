@@ -1,5 +1,5 @@
 pub mod prelude {
-	pub use super::{In, InBase, Bytes};
+	pub use super::{In, InExt, Bytes};
 }
 
 pub mod coverage;
@@ -16,7 +16,7 @@ pub enum Error {
 pub type Result<T, E=Error> = std::result::Result<T, E>;
 
 #[allow(clippy::len_without_is_empty)]
-pub trait InBase<'a> {
+pub trait In<'a> {
 	fn pos(&self) -> usize;
 	fn len(&self) -> usize;
 	fn seek(&mut self, pos: usize) -> Result<()>;
@@ -24,7 +24,7 @@ pub trait InBase<'a> {
 	fn dump(&self) -> beryl::Dump;
 }
 
-pub trait In<'a>: InBase<'a> {
+pub trait InExt<'a>: In<'a> {
 	fn remaining(&self) -> usize {
 		self.len() - self.pos()
 	}
@@ -67,7 +67,7 @@ pub trait In<'a>: InBase<'a> {
 	}
 }
 
-impl<'a, T> In<'a> for T where T: InBase<'a> + ?Sized {}
+impl<'a, T> InExt<'a> for T where T: In<'a> + ?Sized {}
 
 macro_rules! primitives {
 	($name:ident, $suf:ident, $conv:ident; $($type:ident),*) => { paste::paste! {
@@ -128,7 +128,7 @@ impl<'a> Bytes<'a> {
 	}
 }
 
-impl<'a> InBase<'a> for Bytes<'a> {
+impl<'a> In<'a> for Bytes<'a> {
 	fn pos(&self) -> usize {
 		self.pos
 	}

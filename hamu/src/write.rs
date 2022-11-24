@@ -7,7 +7,7 @@ use std::{
 };
 
 pub mod prelude {
-	pub use super::{OutBase, Label, OutDelay, Out, OutBytes};
+	pub use super::{Out, OutDelay, OutExt, Label, OutBytes};
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -23,12 +23,12 @@ pub enum Error {
 pub type Result<T, E=Error> = std::result::Result<T, E>;
 
 #[allow(clippy::len_without_is_empty)]
-pub trait OutBase {
+pub trait Out {
 	fn len(&self) -> usize;
 	fn slice(&mut self, data: &[u8]);
 }
 
-pub trait OutDelay: OutBase {
+pub trait OutDelay: Out {
 	fn label(&mut self, label: LabelDef);
 	fn delay<const N: usize, F>(&mut self, cb: F) where
 		F: FnOnce(&dyn Fn(Label) -> Result<usize>) -> Result<[u8; N]> + 'static;
@@ -40,7 +40,7 @@ pub trait OutDelay: OutBase {
 	}
 }
 
-pub trait Out: OutBase {
+pub trait OutExt: Out {
 	fn is_empty(&self) -> bool {
 		self.len() == 0
 	}
@@ -53,7 +53,7 @@ pub trait Out: OutBase {
 		self.slice(&vec![0;(size-(self.len()%size))%size]);
 	}
 }
-impl<T> Out for T where T: OutBase + ?Sized {}
+impl<T> OutExt for T where T: Out + ?Sized {}
 
 type Delayed = Box<dyn FnOnce(&dyn Fn(Label) -> Result<usize>, &mut [u8]) -> Result<()>>;
 
@@ -107,7 +107,7 @@ impl OutBytes {
 	}
 }
 
-impl OutBase for OutBytes {
+impl Out for OutBytes {
 	fn len(&self) -> usize {
 		self.data.len()
 	}
