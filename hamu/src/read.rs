@@ -132,8 +132,8 @@ macro_rules! primitives_alias {
 	} }
 }
 
-primitives_alias!(le, _le; InLe { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
-primitives_alias!(be, _be; InBe { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
+primitives_alias!(le, _le; InExtLe { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
+primitives_alias!(be, _be; InExtBe { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
 
 #[derive(Clone)]
 pub struct Bytes<'a> {

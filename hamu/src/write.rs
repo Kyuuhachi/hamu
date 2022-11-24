@@ -202,13 +202,13 @@ macro_rules! primitives_alias {
 
 primitives_alias!(
 	le, _le;
-	OutLe { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 };
-	OutDelayLe { u8, u16, u32, u64, u128 }
+	OutExtLe { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 };
+	OutDelayExtLe { u8, u16, u32, u64, u128 }
 );
 primitives_alias!(
 	be, _be;
-	OutBe { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 };
-	OutDelayBe { u8, u16, u32, u64, u128 }
+	OutExtBe { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 };
+	OutDelayExtBe { u8, u16, u32, u64, u128 }
 );
 
 pub fn cast_usize<T: TryFrom<usize, Error=TryFromIntError>>(v: usize) -> Result<T> {
