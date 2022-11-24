@@ -7,7 +7,7 @@ use std::{
 };
 
 pub mod prelude {
-	pub use super::{Out, OutDelay, OutExt, Label, OutBytes};
+	pub use super::{Out, OutDelay, OutExt, OutDelayExt, Label, OutBytes};
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -22,6 +22,30 @@ pub enum Error {
 }
 pub type Result<T, E=Error> = std::result::Result<T, E>;
 
+macro_rules! primitives {
+	($suf: ident, $conv:ident; { $($type:ident),* }) => { paste::paste! {
+		$(
+			fn [<$type $suf>](&mut self, v: $type) {
+				self.array(v.$conv());
+			}
+		)*
+	} }
+}
+
+macro_rules! primitives_delay {
+	($suf: ident, $conv:ident; { $($type:ident),* }) => { paste::paste! {
+		$(
+			fn [<delay_ $type $suf>](&mut self, k: Label) where Self: OutDelay {
+				self.delay(move |lookup| {
+					let v = lookup(k.clone())?;
+					let v = cast_usize::<$type>(v)?;
+					Ok(v.$conv())
+				});
+			}
+		)*
+	} }
+}
+
 #[allow(clippy::len_without_is_empty)]
 pub trait Out {
 	fn len(&self) -> usize;
@@ -32,12 +56,6 @@ pub trait OutDelay: Out {
 	fn label(&mut self, label: LabelDef);
 	fn delay<const N: usize, F>(&mut self, cb: F) where
 		F: FnOnce(&dyn Fn(Label) -> Result<usize>) -> Result<[u8; N]> + 'static;
-
-	fn here(&mut self) -> Label {
-		let (l, l_) = Label::new();
-		self.label(l_);
-		l
-	}
 }
 
 pub trait OutExt: Out {
@@ -52,8 +70,23 @@ pub trait OutExt: Out {
 	fn align(&mut self, size: usize) {
 		self.slice(&vec![0;(size-(self.len()%size))%size]);
 	}
+
+	primitives!(_le, to_le_bytes; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
+	primitives!(_be, to_be_bytes; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
 }
 impl<T> OutExt for T where T: Out + ?Sized {}
+
+pub trait OutDelayExt: OutDelay {
+	fn here(&mut self) -> Label {
+		let (l, l_) = Label::new();
+		self.label(l_);
+		l
+	}
+
+	primitives_delay!(_le, to_le_bytes; { u8, u16, u32, u64, u128 });
+	primitives_delay!(_be, to_be_bytes; { u8, u16, u32, u64, u128 });
+}
+impl<T> OutDelayExt for T where T: OutDelay + ?Sized {}
 
 type Delayed = Box<dyn FnOnce(&dyn Fn(Label) -> Result<usize>, &mut [u8]) -> Result<()>>;
 
@@ -135,41 +168,48 @@ impl OutDelay for OutBytes {
 	}
 }
 
-macro_rules! primitives {
-	($name:ident, $suf: ident, $conv:ident; $($type:ident),*; $($utype:ident),*) => { paste::paste! {
-		pub trait $name: Out {
+macro_rules! primitives_alias {
+	(
+		$mod:ident, $suf:ident;
+		$trait:ident { $($type:ident),* };
+		$delay_trait:ident { $($delay_type:ident),* }
+	) => { paste::paste! {
+		pub trait $trait: Out {
 			$(
 				fn $type(&mut self, v: $type) {
-					self.[<$type _ $suf>](v);
-				}
-
-				fn [<$type _ $suf>](&mut self, v: $type) {
-					self.array(v.$conv());
-				}
-			)*
-
-			$(
-				fn [<delay_ $utype>](&mut self, k: Label) where Self: OutDelay {
-					self.[<delay_ $utype _ $suf>](k);
-				}
-
-				fn [<delay_ $utype _ $suf>](&mut self, k: Label) where Self: OutDelay {
-					self.delay(move |lookup| {
-						let v = lookup(k.clone())?;
-						let v = cast_usize::<$utype>(v)?;
-						Ok(v.$conv())
-					});
+					self.[<$type $suf>](v);
 				}
 			)*
 		}
-		impl<T: Out + ?Sized> $name for T {}
+		impl<T> $trait for T where T: Out + ?Sized {}
 
-		pub mod $suf {
+		pub trait $delay_trait: OutDelay {
+			$(
+				fn [<delay_ $delay_type>](&mut self, k: Label) {
+					self.[<delay_ $delay_type $suf>](k);
+				}
+			)*
+		}
+		impl<T> $delay_trait for T where T: OutDelay + ?Sized {}
+
+		pub mod $mod {
 			pub use super::prelude::*;
-			pub use super::$name;
+			pub use super::$trait;
+			pub use super::$delay_trait;
 		}
 	} }
 }
+
+primitives_alias!(
+	le, _le;
+	OutLe { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 };
+	OutDelayLe { u8, u16, u32, u64, u128 }
+);
+primitives_alias!(
+	be, _be;
+	OutBe { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 };
+	OutDelayBe { u8, u16, u32, u64, u128 }
+);
 
 pub fn cast_usize<T: TryFrom<usize, Error=TryFromIntError>>(v: usize) -> Result<T> {
 	T::try_from(v).map_err(|_| Error::LabelSize {
@@ -177,9 +217,6 @@ pub fn cast_usize<T: TryFrom<usize, Error=TryFromIntError>>(v: usize) -> Result<
 		value: format!("{:?}", v),
 	})
 }
-
-primitives!(OutLe, le, to_le_bytes; u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64; u8, u16, u32, u64, u128);
-primitives!(OutBe, be, to_be_bytes; u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64; u8, u16, u32, u64, u128);
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Label(usize);

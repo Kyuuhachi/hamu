@@ -15,6 +15,37 @@ pub enum Error {
 }
 pub type Result<T, E=Error> = std::result::Result<T, E>;
 
+macro_rules! primitives {
+	($suf:ident, $conv:ident; { $($type:ident),* }) => { paste::paste! {
+		$(
+			fn [<$type $suf>](&mut self) -> Result<$type> {
+				Ok($type::$conv(self.array()?))
+			}
+		)*
+	} }
+}
+
+macro_rules! primitives_check {
+	($suf:ident; { $($type:ident),* }) => { paste::paste! {
+		$(
+			fn [<check_ $type $suf>](&mut self, v: $type) -> Result<()> {
+				let pos = self.pos();
+				let u = self.[< $type $suf >]()?;
+				if u != v {
+					let _ = self.seek(pos);
+					return Err(Error::Check {
+						pos,
+						type_: stringify!($type).to_owned(),
+						got: u.to_string(),
+						expected: v.to_string(),
+					})
+				}
+				Ok(())
+			}
+		)*
+	} }
+}
+
 #[allow(clippy::len_without_is_empty)]
 pub trait In<'a> {
 	fn pos(&self) -> usize;
@@ -65,53 +96,44 @@ pub trait InExt<'a>: In<'a> {
 		}
 		Ok(())
 	}
+
+	primitives!(_le, from_le_bytes; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
+	primitives!(_be, from_be_bytes; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
+	primitives_check!(_le; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
+	primitives_check!(_be; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
 }
 
 impl<'a, T> InExt<'a> for T where T: In<'a> + ?Sized {}
 
-macro_rules! primitives {
-	($name:ident, $suf:ident, $conv:ident; $($type:ident),*) => { paste::paste! {
-		pub trait $name<'a>: In<'a> {
+macro_rules! primitives_alias {
+	(
+		$mod:ident, $suf:ident;
+		$trait:ident { $($type:ident),* }
+	) => { paste::paste! {
+		pub trait $trait<'a>: In<'a> {
 			$(
 				fn $type(&mut self) -> Result<$type> {
-					self.[<$type _ $suf>]()
+					self.[<$type $suf>]()
 				}
+			)*
 
-				fn [<$type _ $suf>](&mut self) -> Result<$type> {
-					Ok($type::$conv(self.array()?))
-				}
-
+			$(
 				fn [<check_ $type>](&mut self, v: $type) -> Result<()> {
-					self.[<check_ $type _ $suf>](v)
-				}
-
-				fn [<check_ $type _ $suf>](&mut self, v: $type) -> Result<()> {
-					let pos = self.pos();
-					let u = $name::$type(self)?;
-					if u != v {
-						let _ = self.seek(pos);
-						return Err(Error::Check {
-							pos,
-							type_: stringify!($type).to_owned(),
-							got: u.to_string(),
-							expected: v.to_string(),
-						})
-					}
-					Ok(())
+					self.[<check_ $type $suf>](v)
 				}
 			)*
 		}
-		impl<'a, T: In<'a> + ?Sized> $name<'a> for T {}
+		impl<'a, T> $trait<'a> for T where T: In<'a> + ?Sized {}
 
-		pub mod $suf {
+		pub mod $mod {
 			pub use super::prelude::*;
-			pub use super::$name;
+			pub use super::$trait;
 		}
 	} }
 }
 
-primitives!(InLe, le, from_le_bytes; u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64);
-primitives!(InBe, be, from_be_bytes; u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64);
+primitives_alias!(le, _le; InLe { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
+primitives_alias!(be, _be; InBe { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
 
 #[derive(Clone)]
 pub struct Bytes<'a> {
