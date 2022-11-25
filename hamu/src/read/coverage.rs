@@ -51,7 +51,10 @@ impl<'a, T: In<'a>> In<'a> for Coverage<'a, T> {
 		self.insert_coverage(pos..pos+len);
 		Ok(data)
 	}
+}
 
+#[cfg(feature="beryl")]
+impl<'a, T: In<'a> + Dump> Dump for Coverage<'a, T> {
 	fn dump(&self) -> beryl::Dump {
 		let mut d = self.inner.dump();
 		for r in self.coverage.borrow().iter() {
@@ -91,7 +94,8 @@ impl<'a, T: In<'a>> Coverage<'a, T> {
 		Ok(())
 	}
 
-	pub fn dump_uncovered(&self, mut f: impl FnMut(beryl::Dump)) -> Result<(), Error> where Self: Clone {
+	#[cfg(feature="beryl")]
+	pub fn dump_uncovered(&self, mut f: impl FnMut(beryl::Dump)) -> Result<(), Error> where Self: Clone + Dump {
 		let uncovered = self.uncovered();
 		if !uncovered.is_empty() {
 			for r in uncovered.iter() {

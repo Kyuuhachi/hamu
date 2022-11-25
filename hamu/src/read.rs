@@ -1,5 +1,7 @@
 pub mod prelude {
 	pub use super::{In, InExt, Bytes};
+	#[cfg(feature="beryl")]
+	pub use super::Dump;
 }
 
 pub mod coverage;
@@ -52,6 +54,10 @@ pub trait In<'a> {
 	fn len(&self) -> usize;
 	fn seek(&mut self, pos: usize) -> Result<()>;
 	fn slice(&mut self, len: usize) -> Result<&'a [u8]>;
+}
+
+#[cfg(feature="beryl")]
+pub trait Dump {
 	fn dump(&self) -> beryl::Dump;
 }
 
@@ -175,7 +181,10 @@ impl<'a> In<'a> for Bytes<'a> {
 		self.pos += len;
 		Ok(&self.data[pos..pos+len])
 	}
+}
 
+#[cfg(feature="beryl")]
+impl Dump for Bytes<'_> {
 	fn dump(&self) -> beryl::Dump {
 		let mut cursor = std::io::Cursor::new(&self.data);
 		cursor.set_position(self.pos as u64);

@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-beryl = { path = "../beryl" }
+beryl = { path = "../beryl", optional = true }
 thiserror = "1.0.35"
 paste = "1.0.7"
