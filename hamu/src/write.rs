@@ -123,7 +123,13 @@ impl OutBytes {
 		Ok(self.data)
 	}
 
-	pub fn concat(mut self, mut other: OutBytes) -> Self {
+	#[deprecated]
+	pub fn concat(mut self, other: OutBytes) -> Self {
+		self.append(other);
+		self
+	}
+
+	pub fn append(&mut self, mut other: OutBytes) {
 		let shift = self.len();
 		self.data.append(&mut other.data);
 
@@ -135,8 +141,6 @@ impl OutBytes {
 		for (k, v) in other.labels {
 			self.labels.insert(k, v+shift);
 		}
-
-		self
 	}
 }
 
