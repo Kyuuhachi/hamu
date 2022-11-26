@@ -223,9 +223,9 @@ pub fn cast_usize<T: TryFrom<usize, Error=TryFromIntError>>(v: usize) -> Result<
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Label(usize);
+pub struct Label(u64);
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LabelDef(usize);
+pub struct LabelDef(u64);
 
 impl Debug for Label {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -242,9 +242,14 @@ impl Debug for LabelDef {
 impl Label {
 	#[allow(clippy::new_without_default)]
 	pub fn new() -> (Label, LabelDef) {
-		use std::sync::atomic::{AtomicUsize, Ordering};
-		static COUNT: AtomicUsize = AtomicUsize::new(0);
+		use std::sync::atomic::{AtomicU64, Ordering};
+		static COUNT: AtomicU64 = AtomicU64::new(0);
 		let n = COUNT.fetch_add(1, Ordering::Relaxed);
+		(Label(n), LabelDef(n))
+	}
+
+	pub fn known(n: u32) -> (Label, LabelDef) {
+		let n = n as u64 | 0xFFFFFFFF00000000;
 		(Label(n), LabelDef(n))
 	}
 }
