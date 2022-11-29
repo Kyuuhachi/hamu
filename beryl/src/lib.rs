@@ -262,6 +262,7 @@ impl<'a> Dump<'a> {
 			writeln!(out)?;
 
 			if Some(pos) == len.map(|a| self.start+a) { break; }
+			if buf.is_empty() { break }
 		}
 
 		if self.newline {
