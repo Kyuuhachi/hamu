@@ -17,6 +17,16 @@ pub enum Error {
 }
 pub type Result<T, E=Error> = std::result::Result<T, E>;
 
+impl Error {
+	pub fn pos(&self) -> usize {
+		match self {
+			Error::Seek { pos, .. } => *pos,
+			Error::Read { pos, .. } => *pos,
+			Error::Check { pos, .. } => *pos,
+		}
+	}
+}
+
 macro_rules! primitives {
 	($suf:ident, $conv:ident; { $($type:ident),* }) => { paste::paste! {
 		$(
