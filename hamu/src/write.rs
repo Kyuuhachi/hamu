@@ -90,6 +90,17 @@ impl<T> OutDelayExt for T where T: OutDelay + ?Sized {}
 
 type Delayed = Box<dyn FnOnce(&dyn Fn(Label) -> Result<usize>, &mut [u8]) -> Result<()>>;
 
+impl Out for Vec<u8> {
+	fn len(&self) -> usize {
+		self.len()
+	}
+
+	fn slice(&mut self, data: &[u8]) {
+		self.extend_from_slice(data)
+	}
+}
+
+
 #[derive(Default)]
 #[must_use]
 pub struct OutBytes {
