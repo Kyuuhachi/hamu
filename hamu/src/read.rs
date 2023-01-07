@@ -12,9 +12,10 @@ pub enum Error {
 	Seek { pos: usize, size: usize },
 	#[error("out-of-bounds read of {pos:#X}+{len} (size {size:#X})")]
 	Read { pos: usize, len: usize, size: usize },
-	#[error("mismatched {type_} at {pos:#X}\n  got:      {got}\n  expected: {expected}")]
-	Check { pos: usize, type_: String, got: String, expected: String },
+	#[error("error at {pos:#X}: {error}")]
+	Other { pos: usize, error: Box<dyn std::error::Error> },
 }
+
 pub type Result<T, E=Error> = std::result::Result<T, E>;
 
 impl Error {
@@ -22,7 +23,7 @@ impl Error {
 		match self {
 			Error::Seek { pos, .. } => *pos,
 			Error::Read { pos, .. } => *pos,
-			Error::Check { pos, .. } => *pos,
+			Error::Other { pos, .. } => *pos,
 		}
 	}
 }
@@ -37,6 +38,34 @@ macro_rules! primitives {
 	} }
 }
 
+#[derive(Clone, Debug, thiserror::Error)]
+#[error("mismatched {type_}. expected: {expected}, got: {got}")]
+pub struct Check {
+	type_: String,
+	expected: String,
+	got: String,
+}
+
+#[derive(Clone, Debug, thiserror::Error)]
+pub struct BytesCheck {
+	expected: Vec<u8>,
+	got: Vec<u8>,
+}
+
+impl std::fmt::Display for BytesCheck {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		let mut got = Vec::new();
+		let mut exp = Vec::new();
+		for (&g, &e) in std::iter::zip(&self.got, &self.expected) {
+			got.extend(std::ascii::escape_default(g).map(char::from));
+			exp.extend(std::ascii::escape_default(e).map(char::from));
+			while got.len() < exp.len() { got.push('░') }
+			while exp.len() < got.len() { exp.push('░') }
+		}
+		write!(f, "mismatched bytes.\n  expected: b\"{}\"\n  got:      b\"{}\"", String::from_iter(exp), String::from_iter(got))
+	}
+}
+
 macro_rules! primitives_check {
 	($suf:ident; { $($type:ident),* }) => { paste::paste! {
 		$(
@@ -45,12 +74,11 @@ macro_rules! primitives_check {
 				let u = self.[< $type $suf >]()?;
 				if u != v {
 					let _ = self.seek(pos);
-					return Err(Error::Check {
-						pos,
+					return Err(Error::Other { pos, error: Check {
 						type_: stringify!($type).to_owned(),
 						got: u.to_string(),
 						expected: v.to_string(),
-					})
+					}.into() })
 				}
 				Ok(())
 			}
@@ -95,20 +123,10 @@ pub trait InExt<'a>: In<'a> {
 		let u = self.slice(v.len())?;
 		if u != v {
 			let _ = self.seek(pos);
-			let mut got = Vec::new();
-			let mut exp = Vec::new();
-			for (&g, &e) in std::iter::zip(u, v) {
-				got.extend(std::ascii::escape_default(g).map(char::from));
-				exp.extend(std::ascii::escape_default(e).map(char::from));
-				while got.len() < exp.len() { got.push('░') }
-				while exp.len() < got.len() { exp.push('░') }
-			}
-			return Err(Error::Check {
-				pos,
-				type_:    format!("[u8; {}]", v.len()),
-				got:      format!("b\"{}\"", got.into_iter().collect::<String>()),
-				expected: format!("b\"{}\"", exp.into_iter().collect::<String>()),
-			})
+			return Err(Error::Other { pos, error: BytesCheck {
+				got:      u.to_owned(),
+				expected: v.to_owned(),
+			}.into() })
 		}
 		Ok(())
 	}
