@@ -7,7 +7,7 @@ use std::{
 };
 
 pub mod prelude {
-	pub use super::{Out, OutDelay, OutExt, OutDelayExt, Label, OutBytes};
+	pub use super::{WriteStream, WriteStremExt, Write, WriteExt, Label, Writer};
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -19,6 +19,8 @@ pub enum Error {
 		type_: &'static str,
 		value: String,
 	},
+	#[error(transparent)]
+	Other { error: Box<dyn std::error::Error> },
 }
 pub type Result<T, E=Error> = std::result::Result<T, E>;
 
@@ -35,7 +37,7 @@ macro_rules! primitives {
 macro_rules! primitives_delay {
 	($suf: ident, $conv:ident; { $($type:ident),* }) => { paste::paste! {
 		$(
-			fn [<delay_ $type $suf>](&mut self, k: Label) where Self: OutDelay {
+			fn [<delay_ $type $suf>](&mut self, k: Label) where Self: Write {
 				self.delay(move |lookup| {
 					let v = lookup(k.clone())?;
 					let v = cast_usize::<$type>(v)?;
@@ -47,18 +49,18 @@ macro_rules! primitives_delay {
 }
 
 #[allow(clippy::len_without_is_empty)]
-pub trait Out {
+pub trait WriteStream {
 	fn len(&self) -> usize;
 	fn slice(&mut self, data: &[u8]);
 }
 
-pub trait OutDelay: Out {
+pub trait Write: WriteStream {
 	fn label(&mut self, label: LabelDef);
 	fn delay<const N: usize, F>(&mut self, cb: F) where
 		F: FnOnce(&dyn Fn(Label) -> Result<usize>) -> Result<[u8; N]> + 'static;
 }
 
-pub trait OutExt: Out {
+pub trait WriteStremExt: WriteStream {
 	fn is_empty(&self) -> bool {
 		self.len() == 0
 	}
@@ -74,9 +76,9 @@ pub trait OutExt: Out {
 	primitives!(_le, to_le_bytes; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
 	primitives!(_be, to_be_bytes; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
 }
-impl<T> OutExt for T where T: Out + ?Sized {}
+impl<T> WriteStremExt for T where T: WriteStream + ?Sized {}
 
-pub trait OutDelayExt: OutDelay {
+pub trait WriteExt: Write {
 	fn here(&mut self) -> Label {
 		let (l, l_) = Label::new();
 		self.label(l_);
@@ -86,19 +88,19 @@ pub trait OutDelayExt: OutDelay {
 	primitives_delay!(_le, to_le_bytes; { u8, u16, u32, u64, u128 });
 	primitives_delay!(_be, to_be_bytes; { u8, u16, u32, u64, u128 });
 }
-impl<T> OutDelayExt for T where T: OutDelay + ?Sized {}
+impl<T> WriteExt for T where T: Write + ?Sized {}
 
 type Delayed = Box<dyn FnOnce(&dyn Fn(Label) -> Result<usize>, &mut [u8]) -> Result<()>>;
 
 #[derive(Default)]
 #[must_use]
-pub struct OutBytes {
+pub struct Writer {
 	data: Vec<u8>,
 	delays: Vec<(Range<usize>, Delayed)>,
 	labels: HashMap<LabelDef, usize>,
 }
 
-impl OutBytes {
+impl Writer {
 	pub fn new() -> Self {
 		Self {
 			data: Vec::new(),
@@ -124,12 +126,12 @@ impl OutBytes {
 	}
 
 	#[deprecated]
-	pub fn concat(mut self, other: OutBytes) -> Self {
+	pub fn concat(mut self, other: Writer) -> Self {
 		self.append(other);
 		self
 	}
 
-	pub fn append(&mut self, mut other: OutBytes) {
+	pub fn append(&mut self, mut other: Writer) {
 		let shift = self.len();
 		self.data.append(&mut other.data);
 
@@ -144,7 +146,7 @@ impl OutBytes {
 	}
 }
 
-impl Out for OutBytes {
+impl WriteStream for Writer {
 	fn len(&self) -> usize {
 		self.data.len()
 	}
@@ -154,7 +156,7 @@ impl Out for OutBytes {
 	}
 }
 
-impl OutDelay for OutBytes {
+impl Write for Writer {
 	fn label(&mut self, label: LabelDef) {
 		self.labels.insert(label, self.len());
 	}
@@ -178,23 +180,23 @@ macro_rules! primitives_alias {
 		$trait:ident { $($type:ident),* };
 		$delay_trait:ident { $($delay_type:ident),* }
 	) => { paste::paste! {
-		pub trait $trait: Out {
+		pub trait $trait: WriteStream {
 			$(
 				fn $type(&mut self, v: $type) {
 					self.[<$type $suf>](v);
 				}
 			)*
 		}
-		impl<T> $trait for T where T: Out + ?Sized {}
+		impl<T> $trait for T where T: WriteStream + ?Sized {}
 
-		pub trait $delay_trait: OutDelay {
+		pub trait $delay_trait: Write {
 			$(
 				fn [<delay_ $delay_type>](&mut self, k: Label) {
 					self.[<delay_ $delay_type $suf>](k);
 				}
 			)*
 		}
-		impl<T> $delay_trait for T where T: OutDelay + ?Sized {}
+		impl<T> $delay_trait for T where T: Write + ?Sized {}
 
 		pub mod $mod {
 			pub use super::prelude::*;
