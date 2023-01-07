@@ -166,7 +166,7 @@ primitives_alias!(le, _le; ReadLe { u8, u16, u32, u64, u128, i8, i16, i32, i64, 
 primitives_alias!(be, _be; ReadBe { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
 
 #[allow(clippy::len_without_is_empty)]
-pub trait Read<'a>: ReadStream<Error=Error> {
+pub trait Read<'a>: ReadStream<Error=Error> + Clone {
 	fn pos(&self) -> usize;
 	fn len(&self) -> usize;
 	fn seek(&mut self, pos: usize) -> Result<(), Self::Error>;
