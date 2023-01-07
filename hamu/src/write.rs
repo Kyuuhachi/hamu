@@ -20,7 +20,7 @@ pub enum Error {
 		value: String,
 	},
 	#[error(transparent)]
-	Other { error: Box<dyn std::error::Error> },
+	Other { error: Box<dyn std::error::Error + Send + Sync> },
 }
 pub type Result<T, E=Error> = std::result::Result<T, E>;
 

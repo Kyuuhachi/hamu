@@ -13,7 +13,7 @@ pub enum Error {
 	#[error("out-of-bounds read of {pos:#X}+{len} (size {size:#X})")]
 	Read { pos: usize, len: usize, size: usize },
 	#[error("error at {pos:#X}: {error}")]
-	Other { pos: usize, error: Box<dyn std::error::Error> },
+	Other { pos: usize, error: Box<dyn std::error::Error + Send + Sync> },
 }
 
 pub type Result<T, E=Error> = std::result::Result<T, E>;
