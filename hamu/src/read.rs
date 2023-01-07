@@ -1,5 +1,5 @@
 pub mod prelude {
-	pub use super::{In, InExt, Bytes};
+	pub use super::{ReadStream, ReadStreamExt, Read, ReadExt, Reader};
 	#[cfg(feature="beryl")]
 	pub use super::Dump;
 }
@@ -26,30 +26,28 @@ impl Error {
 			Error::Other { pos, .. } => *pos,
 		}
 	}
-}
 
-macro_rules! primitives {
-	($suf:ident, $conv:ident; { $($type:ident),* }) => { paste::paste! {
-		$(
-			fn [<$type $suf>](&mut self) -> Result<$type> {
-				Ok($type::$conv(self.array()?))
-			}
-		)*
-	} }
+	pub fn pos_mut(&mut self) -> &mut usize {
+		match self {
+			Error::Seek { pos, .. } => pos,
+			Error::Read { pos, .. } => pos,
+			Error::Other { pos, .. } => pos,
+		}
+	}
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
 #[error("mismatched {type_}. expected: {expected}, got: {got}")]
 pub struct Check {
-	type_: String,
-	expected: String,
-	got: String,
+	pub type_: String,
+	pub expected: String,
+	pub got: String,
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub struct BytesCheck {
-	expected: Vec<u8>,
-	got: Vec<u8>,
+	pub expected: Vec<u8>,
+	pub got: Vec<u8>,
 }
 
 impl std::fmt::Display for BytesCheck {
@@ -66,19 +64,38 @@ impl std::fmt::Display for BytesCheck {
 	}
 }
 
-macro_rules! primitives_check {
+pub trait ReadStream {
+	type Error;
+	type ErrorState;
+
+	fn fill(&mut self, buf: &mut [u8]) -> Result<(), Self::Error>;
+
+	fn error_state(&self) -> Self::ErrorState;
+	fn to_error(&mut self, state: Self::ErrorState, err: Box<dyn std::error::Error + Send + Sync>) -> Self::Error;
+}
+
+macro_rules! primitives2 {
+	($suf:ident, $conv:ident; { $($type:ident),* }) => { paste::paste! {
+		$(
+			fn [<$type $suf>](&mut self) -> Result<$type, Self::Error> {
+				Ok($type::$conv(self.array()?))
+			}
+		)*
+	} }
+}
+
+macro_rules! primitives_check2 {
 	($suf:ident; { $($type:ident),* }) => { paste::paste! {
 		$(
-			fn [<check_ $type $suf>](&mut self, v: $type) -> Result<()> {
-				let pos = self.pos();
+			fn [<check_ $type $suf>](&mut self, v: $type) -> Result<(), Self::Error> {
+				let state = self.error_state();
 				let u = self.[< $type $suf >]()?;
 				if u != v {
-					let _ = self.seek(pos);
-					return Err(Error::Other { pos, error: Check {
+					return Err(self.to_error(state, Check {
 						type_: stringify!($type).to_owned(),
 						got: u.to_string(),
 						expected: v.to_string(),
-					}.into() })
+					}.into()))
 				}
 				Ok(())
 			}
@@ -86,78 +103,45 @@ macro_rules! primitives_check {
 	} }
 }
 
-#[allow(clippy::len_without_is_empty)]
-pub trait In<'a> {
-	fn pos(&self) -> usize;
-	fn len(&self) -> usize;
-	fn seek(&mut self, pos: usize) -> Result<()>;
-	fn slice(&mut self, len: usize) -> Result<&'a [u8]>;
+pub trait ReadStreamExt: ReadStream {
+	fn array<const N: usize>(&mut self) -> Result<[u8; N], Self::Error> {
+		let mut x = [0; N];
+		self.fill(&mut x)?;
+		Ok(x)
+	}
+
+	fn vec(&mut self, n: usize) -> Result<Vec<u8>, Self::Error> {
+		let mut x = vec![0; n];
+		self.fill(&mut x)?;
+		Ok(x)
+	}
+
+	primitives2!(_le, from_le_bytes; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
+	primitives2!(_be, from_be_bytes; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
+	primitives_check2!(_le; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
+	primitives_check2!(_be; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
 }
-
-#[cfg(feature="beryl")]
-pub trait Dump {
-	fn dump(&self) -> beryl::Dump;
-}
-
-pub trait InExt<'a>: In<'a> {
-	fn remaining(&self) -> usize {
-		self.len() - self.pos()
-	}
-
-	fn at(mut self, pos: usize) -> Result<Self> where Self: Sized {
-		self.seek(pos)?;
-		Ok(self)
-	}
-
-	fn array<const N: usize>(&mut self) -> Result<[u8; N]> {
-		Ok(self.slice(N)?.try_into().unwrap())
-	}
-
-	fn align(&mut self, size: usize) -> Result<()> {
-		self.slice((size-(self.pos()%size))%size)?;
-		Ok(())
-	}
-
-	fn check(&mut self, v: &[u8]) -> Result<()> {
-		let pos = self.pos();
-		let u = self.slice(v.len())?;
-		if u != v {
-			let _ = self.seek(pos);
-			return Err(Error::Other { pos, error: BytesCheck {
-				got:      u.to_owned(),
-				expected: v.to_owned(),
-			}.into() })
-		}
-		Ok(())
-	}
-
-	primitives!(_le, from_le_bytes; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
-	primitives!(_be, from_be_bytes; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
-	primitives_check!(_le; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
-	primitives_check!(_be; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
-}
-
-impl<'a, T> InExt<'a> for T where T: In<'a> + ?Sized {}
+impl<T: ReadStream + ?Sized> ReadStreamExt for T {}
 
 macro_rules! primitives_alias {
 	(
 		$mod:ident, $suf:ident;
 		$trait:ident { $($type:ident),* }
 	) => { paste::paste! {
-		pub trait $trait<'a>: In<'a> {
+		pub trait $trait: ReadStream {
 			$(
-				fn $type(&mut self) -> Result<$type> {
+				fn $type(&mut self) -> Result<$type, Self::Error> {
 					self.[<$type $suf>]()
 				}
 			)*
 
 			$(
-				fn [<check_ $type>](&mut self, v: $type) -> Result<()> {
+				fn [<check_ $type>](&mut self, v: $type) -> Result<(), Self::Error> {
 					self.[<check_ $type $suf>](v)
 				}
 			)*
 		}
-		impl<'a, T> $trait<'a> for T where T: In<'a> + ?Sized {}
+		impl<T> $trait for T where T: ReadStream + ?Sized {}
 
 		pub mod $mod {
 			pub use super::prelude::*;
@@ -166,16 +150,77 @@ macro_rules! primitives_alias {
 	} }
 }
 
-primitives_alias!(le, _le; InExtLe { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
-primitives_alias!(be, _be; InExtBe { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
+primitives_alias!(le, _le; ReadLe { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
+primitives_alias!(be, _be; ReadBe { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
+
+#[allow(clippy::len_without_is_empty)]
+pub trait Read<'a>: ReadStream {
+	fn pos(&self) -> usize;
+	fn len(&self) -> usize;
+	fn seek(&mut self, pos: usize) -> Result<(), Self::Error>;
+	fn slice(&mut self, len: usize) -> Result<&'a [u8], Self::Error>;
+}
+
+pub trait ReadExt<'a>: Read<'a> {
+	fn remaining(&self) -> usize {
+		self.len() - self.pos()
+	}
+
+	fn at(mut self, pos: usize) -> Result<Self, Self::Error> where Self: Sized {
+		self.seek(pos)?;
+		Ok(self)
+	}
+
+	fn align(&mut self, size: usize) -> Result<(), Self::Error> {
+		self.slice((size-(self.pos()%size))%size)?;
+		Ok(())
+	}
+}
+impl<'a, T: Read<'a> + ?Sized> ReadExt<'a> for T {}
+
+pub struct Io<T: std::io::Read>(T);
+
+impl<T: std::io::Read> Io<T> {
+	pub fn inner(&self) -> &T {
+		&self.0
+	}
+
+	pub fn inner_mut(&mut self) -> &mut T {
+		&mut self.0
+	}
+
+	pub fn into_inner(self) -> T {
+		self.0
+	}
+}
+
+impl<T: std::io::Read> ReadStream for Io<T> {
+	type Error = std::io::Error;
+	type ErrorState = ();
+
+	fn fill(&mut self, buf: &mut [u8]) -> Result<(), Self::Error> {
+		self.0.read_exact(buf)
+	}
+
+	fn error_state(&self) { }
+
+	fn to_error(&mut self, (): Self::ErrorState, err: Box<dyn std::error::Error + Send + Sync>) -> Self::Error {
+		std::io::Error::new(std::io::ErrorKind::Other, err)
+	}
+}
+
+#[cfg(feature="beryl")]
+pub trait Dump {
+	fn dump(&self) -> beryl::Dump;
+}
 
 #[derive(Clone)]
-pub struct Bytes<'a> {
+pub struct Reader<'a> {
 	data: &'a [u8],
 	pos: usize,
 }
 
-impl<'a> Bytes<'a> {
+impl<'a> Reader<'a> {
 	pub fn new(data: &'a [u8]) -> Self {
 		Self {
 			data,
@@ -184,7 +229,35 @@ impl<'a> Bytes<'a> {
 	}
 }
 
-impl<'a> In<'a> for Bytes<'a> {
+impl<'a> ReadStream for Reader<'a> {
+	type Error = Error;
+
+	type ErrorState = usize;
+
+	fn fill(&mut self, buf: &mut [u8]) -> Result<(), Self::Error> {
+		buf.copy_from_slice(self.slice(buf.len())?);
+		Ok(())
+	}
+
+	fn error_state(&self) -> Self::ErrorState {
+		self.pos()
+	}
+
+	fn to_error(&mut self, pos: Self::ErrorState, error: Box<dyn std::error::Error + Send + Sync>) -> Self::Error {
+		Error::Other { pos, error }
+	}
+}
+
+impl<'a> Read<'a> for Reader<'a> {
+	fn slice(&mut self, len: usize) -> Result<&'a [u8]> {
+		if len > self.remaining() {
+			return Err(Error::Read { pos: self.pos(), len, size: self.len() });
+		}
+		let pos = self.pos;
+		self.pos += len;
+		Ok(&self.data[pos..pos+len])
+	}
+
 	fn pos(&self) -> usize {
 		self.pos
 	}
@@ -200,19 +273,10 @@ impl<'a> In<'a> for Bytes<'a> {
 		self.pos = pos;
 		Ok(())
 	}
-
-	fn slice(&mut self, len: usize) -> Result<&'a [u8]> {
-		if len > self.remaining() {
-			return Err(Error::Read { pos: self.pos(), len, size: self.len() });
-		}
-		let pos = self.pos;
-		self.pos += len;
-		Ok(&self.data[pos..pos+len])
-	}
 }
 
 #[cfg(feature="beryl")]
-impl Dump for Bytes<'_> {
+impl Dump for Reader<'_> {
 	fn dump(&self) -> beryl::Dump {
 		let mut cursor = std::io::Cursor::new(&self.data);
 		cursor.set_position(self.pos as u64);

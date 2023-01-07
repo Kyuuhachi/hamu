@@ -12,25 +12,43 @@ pub struct Error {
 }
 
 #[derive(Clone)]
-pub struct Coverage<'a, T: In<'a>> {
+pub struct Coverage<T> {
 	inner: T,
 	coverage: Rc<RefCell<Vec<Range<usize>>>>,
 	last_coverage: usize,
-	_p: std::marker::PhantomData<&'a ()>
 }
 
-impl<'a, T: In<'a>> Coverage<'a, T> {
+impl<T> Coverage<T> {
 	pub fn new(inner: T) -> Self {
 		Self {
 			inner,
 			coverage: Rc::new(RefCell::new(vec![0..0])),
 			last_coverage: 0,
-			_p: std::marker::PhantomData,
 		}
 	}
 }
 
-impl<'a, T: In<'a>> In<'a> for Coverage<'a, T> {
+impl<'a, T: Read<'a>> ReadStream for Coverage<T> {
+	type Error = T::Error;
+	type ErrorState = T::ErrorState;
+
+	fn fill(&mut self, buf: &mut [u8]) -> super::Result<(), Self::Error> {
+		let pos = self.pos();
+		self.inner.fill(buf)?;
+		self.insert_coverage(pos..pos+buf.len());
+		Ok(())
+	}
+
+	fn error_state(&self) -> Self::ErrorState {
+		self.inner.error_state()
+	}
+
+	fn to_error(&mut self, state: Self::ErrorState, err: Box<dyn std::error::Error + Send + Sync>) -> Self::Error {
+		self.inner.to_error(state, err)
+	}
+}
+
+impl<'a, T: Read<'a>> Read<'a> for Coverage<T> {
 	fn pos(&self) -> usize {
 		self.inner.pos()
 	}
@@ -39,13 +57,13 @@ impl<'a, T: In<'a>> In<'a> for Coverage<'a, T> {
 		self.inner.len()
 	}
 
-	fn seek(&mut self, pos: usize) -> Result<(), super::Error> {
+	fn seek(&mut self, pos: usize) -> Result<(), Self::Error> {
 		self.inner.seek(pos)?;
 		self.find_coverage(pos);
 		Ok(())
 	}
 
-	fn slice(&mut self, len: usize) -> Result<&'a [u8], super::Error> {
+	fn slice(&mut self, len: usize) -> Result<&'a [u8], Self::Error> {
 		let pos = self.pos();
 		let data = self.inner.slice(len)?;
 		self.insert_coverage(pos..pos+len);
@@ -54,7 +72,7 @@ impl<'a, T: In<'a>> In<'a> for Coverage<'a, T> {
 }
 
 #[cfg(feature="beryl")]
-impl<'a, T: In<'a> + Dump> Dump for Coverage<'a, T> {
+impl<T: Dump> Dump for Coverage<T> {
 	fn dump(&self) -> beryl::Dump {
 		let mut d = self.inner.dump();
 		for r in self.coverage.borrow().iter() {
@@ -64,7 +82,7 @@ impl<'a, T: In<'a> + Dump> Dump for Coverage<'a, T> {
 	}
 }
 
-impl<'a, T: In<'a>> Coverage<'a, T> {
+impl<'a, T: Read<'a>> Coverage<T> {
 	pub fn coverage(&self) -> Vec<Range<usize>> {
 		// Cloning isn't strictly necessary here, but it makes a better interface and isn't used in
 		// hot paths
@@ -95,7 +113,13 @@ impl<'a, T: In<'a>> Coverage<'a, T> {
 	}
 
 	#[cfg(feature="beryl")]
-	pub fn dump_uncovered(&self, mut f: impl FnMut(beryl::Dump)) -> Result<(), Error> where Self: Clone + Dump {
+	pub fn dump_uncovered(
+		&self,
+		mut f: impl FnMut(beryl::Dump)
+	) -> Result<(), Error> where
+		Self: Clone + Dump,
+		T::Error: std::fmt::Debug,
+	{
 		let uncovered = self.uncovered();
 		if !uncovered.is_empty() {
 			for r in uncovered.iter() {
