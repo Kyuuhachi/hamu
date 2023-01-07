@@ -74,7 +74,7 @@ pub trait ReadStream {
 	fn to_error(&mut self, state: Self::ErrorState, err: Box<dyn std::error::Error + Send + Sync>) -> Self::Error;
 }
 
-macro_rules! primitives2 {
+macro_rules! primitives {
 	($suf:ident, $conv:ident; { $($type:ident),* }) => { paste::paste! {
 		$(
 			fn [<$type $suf>](&mut self) -> Result<$type, Self::Error> {
@@ -84,7 +84,7 @@ macro_rules! primitives2 {
 	} }
 }
 
-macro_rules! primitives_check2 {
+macro_rules! primitives_check {
 	($suf:ident; { $($type:ident),* }) => { paste::paste! {
 		$(
 			fn [<check_ $type $suf>](&mut self, v: $type) -> Result<(), Self::Error> {
@@ -116,10 +116,22 @@ pub trait ReadStreamExt: ReadStream {
 		Ok(x)
 	}
 
-	primitives2!(_le, from_le_bytes; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
-	primitives2!(_be, from_be_bytes; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
-	primitives_check2!(_le; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
-	primitives_check2!(_be; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
+	fn check(&mut self, v: &[u8]) -> Result<(), Self::Error> {
+		let state = self.error_state();
+		let u = self.vec(v.len())?;
+		if u != v {
+			return Err(self.to_error(state, BytesCheck {
+				got:      u,
+				expected: v.to_owned(),
+			}.into()))
+		}
+		Ok(())
+	}
+
+	primitives!(_le, from_le_bytes; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
+	primitives!(_be, from_be_bytes; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
+	primitives_check!(_le; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
+	primitives_check!(_be; { u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64 });
 }
 impl<T: ReadStream + ?Sized> ReadStreamExt for T {}
 
