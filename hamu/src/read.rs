@@ -44,12 +44,12 @@ pub struct Check<T: std::fmt::Display> {
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
-pub struct BytesCheck {
+pub struct CheckBytes {
 	pub expected: Vec<u8>,
 	pub got: Vec<u8>,
 }
 
-impl std::fmt::Display for BytesCheck {
+impl std::fmt::Display for CheckBytes {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let mut got = Vec::new();
 		let mut exp = Vec::new();
@@ -118,7 +118,7 @@ pub trait ReadStreamExt: ReadStream {
 		let state = self.error_state();
 		let u = self.vec(v.len())?;
 		if u != v {
-			return Err(Self::to_error(state, BytesCheck {
+			return Err(Self::to_error(state, CheckBytes {
 				got:      u,
 				expected: v.to_owned(),
 			}.into()))
