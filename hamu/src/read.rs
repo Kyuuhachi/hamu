@@ -191,6 +191,10 @@ impl<'a, T: Read<'a> + ?Sized> ReadExt<'a> for T {}
 pub struct Io<T: std::io::Read>(T);
 
 impl<T: std::io::Read> Io<T> {
+	pub fn new(r: T) -> Self {
+		Io(r)
+	}
+
 	pub fn inner(&self) -> &T {
 		&self.0
 	}
