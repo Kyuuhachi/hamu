@@ -12,8 +12,8 @@ pub enum Error {
 	Seek { pos: usize, size: usize },
 	#[error("out-of-bounds read of {pos:#X}+{len} (size {size:#X})")]
 	Read { pos: usize, len: usize, size: usize },
-	#[error("error at {pos:#X}: {error}")]
-	Other { pos: usize, error: Box<dyn std::error::Error + Send + Sync> },
+	#[error("error at {pos:#X}: {source}")]
+	Other { pos: usize, #[source] source: Box<dyn std::error::Error + Send + Sync> },
 }
 
 pub type Result<T, E=Error> = std::result::Result<T, E>;
@@ -215,7 +215,10 @@ impl<T: std::io::Read> ReadStream for Io<T> {
 	fn error_state(&self) { }
 
 	fn to_error((): Self::ErrorState, err: Box<dyn std::error::Error + Send + Sync>) -> Self::Error {
-		std::io::Error::new(std::io::ErrorKind::Other, err)
+		match err.downcast() {
+			Ok(e) => *e,
+			Err(err) => std::io::Error::new(std::io::ErrorKind::Other, err)
+		}
 	}
 }
 
@@ -253,8 +256,11 @@ impl<'a> ReadStream for Reader<'a> {
 		self.pos()
 	}
 
-	fn to_error(pos: Self::ErrorState, error: Box<dyn std::error::Error + Send + Sync>) -> Self::Error {
-		Error::Other { pos, error }
+	fn to_error(pos: Self::ErrorState, err: Box<dyn std::error::Error + Send + Sync>) -> Self::Error {
+		match err.downcast() {
+			Ok(e) => *e,
+			Err(err) => Error::Other { pos, source: err }
+		}
 	}
 }
 
