@@ -43,8 +43,8 @@ impl<'a, T: Read<'a>> ReadStream for Coverage<T> {
 		self.inner.error_state()
 	}
 
-	fn to_error(&mut self, state: Self::ErrorState, err: Box<dyn std::error::Error + Send + Sync>) -> Self::Error {
-		self.inner.to_error(state, err)
+	fn to_error(state: Self::ErrorState, err: Box<dyn std::error::Error + Send + Sync>) -> Self::Error {
+		T::to_error(state, err)
 	}
 }
 

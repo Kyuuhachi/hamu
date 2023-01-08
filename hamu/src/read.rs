@@ -71,7 +71,7 @@ pub trait ReadStream {
 	fn fill(&mut self, buf: &mut [u8]) -> Result<(), Self::Error>;
 
 	fn error_state(&self) -> Self::ErrorState;
-	fn to_error(&mut self, state: Self::ErrorState, err: Box<dyn std::error::Error + Send + Sync>) -> Self::Error;
+	fn to_error(state: Self::ErrorState, err: Box<dyn std::error::Error + Send + Sync>) -> Self::Error;
 }
 
 macro_rules! primitives {
@@ -91,7 +91,7 @@ macro_rules! primitives_check {
 				let state = self.error_state();
 				let u = self.[< $type $suf >]()?;
 				if u != v {
-					return Err(self.to_error(state, Check {
+					return Err(Self::to_error(state, Check {
 						type_: stringify!($type).to_owned(),
 						got: u.to_string(),
 						expected: v.to_string(),
@@ -120,7 +120,7 @@ pub trait ReadStreamExt: ReadStream {
 		let state = self.error_state();
 		let u = self.vec(v.len())?;
 		if u != v {
-			return Err(self.to_error(state, BytesCheck {
+			return Err(Self::to_error(state, BytesCheck {
 				got:      u,
 				expected: v.to_owned(),
 			}.into()))
@@ -216,7 +216,7 @@ impl<T: std::io::Read> ReadStream for Io<T> {
 
 	fn error_state(&self) { }
 
-	fn to_error(&mut self, (): Self::ErrorState, err: Box<dyn std::error::Error + Send + Sync>) -> Self::Error {
+	fn to_error((): Self::ErrorState, err: Box<dyn std::error::Error + Send + Sync>) -> Self::Error {
 		std::io::Error::new(std::io::ErrorKind::Other, err)
 	}
 }
@@ -255,7 +255,7 @@ impl<'a> ReadStream for Reader<'a> {
 		self.pos()
 	}
 
-	fn to_error(&mut self, pos: Self::ErrorState, error: Box<dyn std::error::Error + Send + Sync>) -> Self::Error {
+	fn to_error(pos: Self::ErrorState, error: Box<dyn std::error::Error + Send + Sync>) -> Self::Error {
 		Error::Other { pos, error }
 	}
 }
