@@ -37,11 +37,10 @@ impl Error {
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
-#[error("mismatched {type_}. expected: {expected}, got: {got}")]
-pub struct Check {
-	pub type_: String,
-	pub expected: String,
-	pub got: String,
+#[error("mismatched {type_}. expected: {expected}, got: {got}", type_ = std::any::type_name::<T>())]
+pub struct Check<T: std::fmt::Display> {
+	pub expected: T,
+	pub got: T,
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -92,9 +91,8 @@ macro_rules! primitives_check {
 				let u = self.[< $type $suf >]()?;
 				if u != v {
 					return Err(Self::to_error(state, Check {
-						type_: stringify!($type).to_owned(),
-						got: u.to_string(),
-						expected: v.to_string(),
+						got: u,
+						expected: v,
 					}.into()))
 				}
 				Ok(())
